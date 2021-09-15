@@ -1,0 +1,76 @@
+version: '3.5'
+
+networks:
+  frontend:
+    driver: ${NETWORKS_DRIVER}
+  backend:
+    driver: ${NETWORKS_DRIVER}
+volumes:
+  sonarqube:
+    driver: ${VOLUMES_DRIVER}
+  postgres:
+    driver: ${VOLUMES_DRIVER}
+
+services:
+
+### PostgreSQL ###################################
+    postgres:
+      build:
+        context: ./postgres
+        args:
+          - POSTGRES_VERSION=${POSTGRES_VERSION}
+      volumes:
+        - ${DATA_PATH_HOST}/postgres:/var/lib/postgresql/pgsql
+        - ${POSTGRES_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
+      ports:
+        - "${POSTGRES_PORT}:5432"
+      environment:
+        - POSTGRES_DB=${POSTGRES_DB}
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - SONARQUBE_POSTGRES_INIT=${SONARQUBE_POSTGRES_INIT}
+        - SONARQUBE_POSTGRES_DB=${SONARQUBE_POSTGRES_DB}
+        - SONARQUBE_POSTGRES_USER=${SONARQUBE_POSTGRES_USER}
+        - SONARQUBE_POSTGRES_PASSWORD=${SONARQUBE_POSTGRES_PASSWORD}
+      networks:
+        - backend
+
+### Jenkins ###################################################
+    jenkins:
+      build: ./jenkins
+      environment:
+        JAVA_OPTS: "-Djava.awt.headless=true"
+      ports:
+        - "${JENKINS_HOST_SLAVE_AGENT_PORT}:50000"
+        - "${JENKINS_HOST_HTTP_PORT}:8080"
+      privileged: true
+      volumes:
+        - ${JENKINS_HOME}:/var/jenkins_home
+        - /var/run/docker.sock:/var/run/docker.sock
+      networks:
+        - frontend
+        - backend
+
+### SONARQUBE ################################################
+    sonarqube:
+      build:
+        context: ./sonarqube
+      hostname: "${SONARQUBE_HOSTNAME}"
+      volumes:
+        - ${DATA_PATH_HOST}/sonarqube/conf:/opt/sonarqube/conf
+        - ${DATA_PATH_HOST}/sonarqube/data:/opt/sonarqube/data
+        - ${DATA_PATH_HOST}/sonarqube/logs:/opt/sonarqube/logs
+        - ${DATA_PATH_HOST}/sonarqube/extensions:/opt/sonarqube/extensions
+        - ${DATA_PATH_HOST}/sonarqube/plugins:/opt/sonarqube/lib/bundled-plugins
+      ports:
+        - ${SONARQUBE_PORT}:9000
+      depends_on:
+        - postgres
+      environment:
+        - sonar.jdbc.username=${SONARQUBE_POSTGRES_USER}
+        - sonar.jdbc.password=${SONARQUBE_POSTGRES_PASSWORD}
+        - sonar.jdbc.url=jdbc:postgresql://${SONARQUBE_POSTGRES_HOST}:5432/${SONARQUBE_POSTGRES_DB}
+      networks:
+        - backend
+        - frontend
+
